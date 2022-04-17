@@ -1,5 +1,6 @@
 use crate::disk;
 use crate::hex_utils;
+use crate::tower_msgs::{Register, TowerMessage, TowerMessageHandler};
 use crate::{
 	ChannelManager, HTLCStatus, InvoicePayer, MillisatAmount, PaymentInfo, PaymentInfoStorage,
 	PeerManager,
@@ -140,10 +141,11 @@ pub(crate) fn parse_startup_args() -> Result<LdkUserInfo, ()> {
 }
 
 pub(crate) async fn poll_for_user_input<E: EventHandler>(
-	invoice_payer: Arc<InvoicePayer<E>>, peer_manager: Arc<PeerManager>,
-	channel_manager: Arc<ChannelManager>, keys_manager: Arc<KeysManager>,
-	network_graph: Arc<NetworkGraph>, inbound_payments: PaymentInfoStorage,
-	outbound_payments: PaymentInfoStorage, ldk_data_dir: String, network: Network,
+	tower_message_handler: Arc<TowerMessageHandler>, invoice_payer: Arc<InvoicePayer<E>>,
+	peer_manager: Arc<PeerManager>, channel_manager: Arc<ChannelManager>,
+	keys_manager: Arc<KeysManager>, network_graph: Arc<NetworkGraph>,
+	inbound_payments: PaymentInfoStorage, outbound_payments: PaymentInfoStorage,
+	ldk_data_dir: String, network: Network,
 ) {
 	println!("LDK startup successful. To view available commands: \"help\".");
 	println!("LDK logs are available at <your-supplied-ldk-data-dir-path>/.ldk/logs");
@@ -161,6 +163,43 @@ pub(crate) async fn poll_for_user_input<E: EventHandler>(
 		if let Some(word) = words.next() {
 			match word {
 				"help" => help(),
+				// An arm that handles sending our custom message to a peer.
+				// Note that you must connect to that peers first.
+				"sendregistermsg" => {
+					let pubkey = words.next();
+					let appointment_slots = words.next();
+					let subscription_period = words.next();
+					if pubkey.is_none()
+						|| appointment_slots.is_none()
+						|| subscription_period.is_none()
+					{
+						println!("ERROR: sendregistermsg has 3 required arguments. Type `help`.");
+						continue;
+					}
+
+					let pubkey = hex_utils::to_compressed_pubkey(pubkey.unwrap());
+					if pubkey.is_none() {
+						println!("ERROR: unable to parse given pubkey for node");
+						continue;
+					}
+					let pubkey = pubkey.unwrap();
+
+					let appointment_slots = appointment_slots.unwrap().parse::<u32>();
+					let subscription_period = subscription_period.unwrap().parse::<u32>();
+					if appointment_slots.is_err() || subscription_period.is_err() {
+						println!("ERROR: <appointment_slots> and <subscription_period> must be integers.");
+						continue;
+					}
+					let appointment_slots = appointment_slots.unwrap();
+					let subscription_period = subscription_period.unwrap();
+
+					send_register_msg(
+						pubkey,
+						tower_message_handler.clone(),
+						appointment_slots,
+						subscription_period,
+					);
+				}
 				"openchannel" => {
 					let peer_pubkey_and_ip_addr = words.next();
 					let channel_value_sat = words.next();
@@ -367,8 +406,10 @@ pub(crate) async fn poll_for_user_input<E: EventHandler>(
 }
 
 fn help() {
+	println!("sendregistermsg <dest_pubkey> <appointment_slots> <subscription_period>");
 	println!("openchannel pubkey@host:port <amt_satoshis>");
 	println!("sendpayment <invoice>");
+	println!("keysend <dest_pubkey> <amt_msat>");
 	println!("getinvoice <amt_millisatoshis>");
 	println!("connectpeer pubkey@host:port");
 	println!("listchannels");
@@ -378,6 +419,16 @@ fn help() {
 	println!("nodeinfo");
 	println!("listpeers");
 	println!("signmessage <message>");
+}
+
+fn send_register_msg(
+	pubkey: PublicKey, tower_message_handler: Arc<TowerMessageHandler>, appointment_slots: u32,
+	subscription_period: u32,
+) {
+	tower_message_handler.send_message(
+		&pubkey,
+		TowerMessage::Register(Register { pubkey, appointment_slots, subscription_period }),
+	)
 }
 
 fn node_info(channel_manager: &Arc<ChannelManager>, peer_manager: &Arc<PeerManager>) {

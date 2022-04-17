@@ -3,6 +3,7 @@ mod cli;
 mod convert;
 mod disk;
 mod hex_utils;
+mod tower_msgs;
 
 use crate::bitcoind_client::BitcoindClient;
 use crate::disk::FilesystemLogger;
@@ -22,7 +23,7 @@ use lightning::ln::channelmanager;
 use lightning::ln::channelmanager::{
 	ChainParameters, ChannelManagerReadArgs, SimpleArcChannelManager,
 };
-use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
+use lightning::ln::peer_handler::MessageHandler;
 use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::routing::network_graph::{NetGraphMsgHandler, NetworkGraph};
 use lightning::routing::scoring::ProbabilisticScorer;
@@ -51,6 +52,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
+use tower_msgs::{SimpleTowerArcPeerManager, TowerMessageHandler};
 
 pub(crate) enum HTLCStatus {
 	Pending,
@@ -87,7 +89,7 @@ type ChainMonitor = chainmonitor::ChainMonitor<
 	Arc<FilesystemPersister>,
 >;
 
-pub(crate) type PeerManager = SimpleArcPeerManager<
+pub(crate) type PeerManager = SimpleTowerArcPeerManager<
 	SocketDescriptor,
 	ChainMonitor,
 	BitcoindClient,
@@ -530,12 +532,13 @@ async fn start_ldk() {
 		chan_handler: channel_manager.clone(),
 		route_handler: network_gossip.clone(),
 	};
+	let tower_message_handler = Arc::new(TowerMessageHandler::new());
 	let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
 		lightning_msg_handler,
 		keys_manager.get_node_secret(Recipient::Node).unwrap(),
 		&ephemeral_bytes,
 		logger.clone(),
-		Arc::new(IgnoringMessageHandler {}),
+		tower_message_handler.clone(),
 	));
 
 	// ## Running LDK
@@ -719,6 +722,7 @@ async fn start_ldk() {
 
 	// Start the CLI.
 	cli::poll_for_user_input(
+		Arc::clone(&tower_message_handler),
 		Arc::clone(&invoice_payer),
 		Arc::clone(&peer_manager),
 		Arc::clone(&channel_manager),
