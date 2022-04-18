@@ -121,17 +121,15 @@ impl Writeable for TowerMessage {
 
 /// A handler to handle the incoming [`TowerMessage`]s.
 pub struct TowerMessageHandler {
-	msg_q: Mutex<Vec<(PublicKey, <TowerMessageHandler as CustomMessageReader>::CustomMessage)>>,
+	msg_q: Mutex<Vec<(PublicKey, TowerMessage)>>,
 }
 
 impl TowerMessageHandler {
-	pub fn new() -> TowerMessageHandler {
-		TowerMessageHandler { msg_q: Mutex::new(Vec::new()) }
+	pub fn new() -> Self {
+		Self { msg_q: Mutex::new(Vec::new()) }
 	}
 
-	pub fn handle_tower_message(
-		msg: <TowerMessageHandler as CustomMessageReader>::CustomMessage,
-	) -> Result<<TowerMessageHandler as CustomMessageReader>::CustomMessage, LightningError> {
+	pub fn handle_tower_message(msg: TowerMessage) -> Result<TowerMessage, LightningError> {
 		match msg {
 			TowerMessage::Register(msg) => {
 				println!(
@@ -164,9 +162,7 @@ impl TowerMessageHandler {
 		}
 	}
 
-	pub fn send_message(
-		&self, pubkey: &PublicKey, msg: <TowerMessageHandler as CustomMessageReader>::CustomMessage,
-	) {
+	pub fn send_message(&self, pubkey: &PublicKey, msg: TowerMessage) {
 		self.msg_q.lock().unwrap().push((pubkey.clone(), msg))
 	}
 }
@@ -176,7 +172,7 @@ impl CustomMessageReader for TowerMessageHandler {
 
 	fn read<R: io::Read>(
 		&self, message_type: u16, buffer: &mut R,
-	) -> Result<Option<Self::CustomMessage>, DecodeError> {
+	) -> Result<Option<TowerMessage>, DecodeError> {
 		match message_type {
 			Register::TYPE => Ok(Some(TowerMessage::Register(Readable::read(buffer)?))),
 			// Similar to the writable register message, we won't ever need to read
@@ -192,16 +188,16 @@ impl CustomMessageReader for TowerMessageHandler {
 
 impl CustomMessageHandler for TowerMessageHandler {
 	fn handle_custom_message(
-		&self, msg: Self::CustomMessage, sender_node_id: &PublicKey,
+		&self, msg: TowerMessage, sender_node_id: &PublicKey,
 	) -> Result<(), LightningError> {
 		Ok(self
 			.msg_q
 			.lock()
 			.unwrap()
-			.push((sender_node_id.clone(), TowerMessageHandler::handle_tower_message(msg)?)))
+			.push((sender_node_id.clone(), Self::handle_tower_message(msg)?)))
 	}
 
-	fn get_and_clear_pending_msg(&self) -> Vec<(PublicKey, Self::CustomMessage)> {
+	fn get_and_clear_pending_msg(&self) -> Vec<(PublicKey, TowerMessage)> {
 		mem::replace(&mut self.msg_q.lock().unwrap(), Vec::new())
 	}
 }
