@@ -194,8 +194,9 @@ pub(crate) async fn poll_for_user_input<E: EventHandler>(
 					let subscription_period = subscription_period.unwrap();
 
 					send_register_msg(
-						pubkey,
 						tower_message_handler.clone(),
+						channel_manager.get_our_node_id(),
+						pubkey,
 						appointment_slots,
 						subscription_period,
 					);
@@ -422,12 +423,16 @@ fn help() {
 }
 
 fn send_register_msg(
-	pubkey: PublicKey, tower_message_handler: Arc<TowerMessageHandler>, appointment_slots: u32,
-	subscription_period: u32,
+	tower_message_handler: Arc<TowerMessageHandler>, our_pubkey: PublicKey,
+	their_pubkey: PublicKey, appointment_slots: u32, subscription_period: u32,
 ) {
 	tower_message_handler.send_message(
-		&pubkey,
-		TowerMessage::Register(Register { pubkey, appointment_slots, subscription_period }),
+		&their_pubkey,
+		TowerMessage::Register(Register {
+			pubkey: our_pubkey,
+			appointment_slots,
+			subscription_period,
+		}),
 	)
 }
 
