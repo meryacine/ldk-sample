@@ -101,6 +101,7 @@ impl Type for TowerMessage {
 		match self {
 			TowerMessage::Register(..) => Register::TYPE,
 			TowerMessage::SubscriptionDetails(..) => SubscriptionDetails::TYPE,
+			// Other msgs go here ...
 		}
 	}
 }
@@ -110,12 +111,9 @@ impl Writeable for TowerMessage {
 		match self {
 			// A tower won't normally send register messages to anybody so we
 			// don't need to implement this case and we can return an error instead.
-			TowerMessage::Register(msg) => msg.write(writer)?,
-			TowerMessage::SubscriptionDetails(msg) => {
-				msg.write(writer)?;
-			}
+			TowerMessage::Register(msg) => msg.write(writer),
+			TowerMessage::SubscriptionDetails(msg) => msg.write(writer),
 		}
-		Ok(())
 	}
 }
 
@@ -176,7 +174,7 @@ impl CustomMessageReader for TowerMessageHandler {
 		match message_type {
 			Register::TYPE => Ok(Some(TowerMessage::Register(Readable::read(buffer)?))),
 			// Similar to the writable register message, we won't ever need to read
-			// a subscription details message. We could have return an error here instead.
+			// a subscription details message. We could have returned an error here instead.
 			SubscriptionDetails::TYPE => {
 				Ok(Some(TowerMessage::SubscriptionDetails(Readable::read(buffer)?)))
 			}
